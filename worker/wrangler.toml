@@ -1,0 +1,5 @@
+name = "stock-lens-api"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+account_id = "853b39b6d29a5d3fb64b784ae66d77c8"
+workers_dev = true

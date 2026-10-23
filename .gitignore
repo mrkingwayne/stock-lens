@@ -4,3 +4,5 @@ site/data/
 *.log
 tickers.json
 tcache.json
+worker/node_modules/
+worker/.wrangler/

@@ -37,7 +37,7 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:20px}
 <form id="f" autocomplete="off"><input id="q" placeholder="輸入美股代號，如 NVDA" ><button>查詢</button><div id="sug"></div></form>
 <div class="chips" id="chips"></div></header>
 <main><div id="msg">輸入美股代號開始查詢</div><div id="app" class="hide"></div></main>
-<footer>資料來源：Yahoo Finance（股價、財報、分析師預估）、美國 SEC EDGAR XBRL（營收、剩餘履約義務 RPO、backlog）、Google News（新聞）。新聞與公司簡介為機器翻譯。<br>僅供參考，非投資建議，預測不保證準確。</footer>
+<footer>資料來源：Yahoo Finance（股價、財報、分析師預估）、美國 SEC EDGAR XBRL（營收、剩餘履約義務 RPO、backlog）、Google News / Bing News（新聞）。新聞與公司簡介為機器翻譯。<br>僅供參考，非投資建議，預測不保證準確。</footer>
 <script>
 const $=s=>document.querySelector(s);let IDX={};const REPO="mrkingwayne/stock-lens";
 const fmt=(v,d=2)=>v==null||isNaN(v)?"無資料":Number(v).toLocaleString("en-US",{maximumFractionDigits:d,minimumFractionDigits:d});
@@ -128,15 +128,12 @@ function draw(D,PJ){charts.forEach(c=>c.remove());charts=[];
 // ---- 頁面 ----
 async function load(t){if(!t)return;t=t.toUpperCase();$("#msg").textContent="載入 "+t+" 中…";$("#msg").classList.remove("hide");$("#app").classList.add("hide");
  let D=null;try{const r=await fetch("data/"+t+".json?v="+Date.now().toString().slice(0,-5));if(r.ok)D=await r.json()}catch(e){}
- if(!D){D=await live(t);if(!D){$("#msg").innerHTML=`找不到 <b>${esc(t)}</b> 的資料。請確認代號是否正確（例：BRK-B）。<br><br><a style="color:#4da3ff" target="_blank" href="https://github.com/${REPO}/issues/new?title=build:${t}&body=請建立 ${t} 的完整資料">➜ 請求建立 ${esc(t)} 完整資料（需登入 GitHub，約 2–3 分鐘）</a>`;return}}
+ if(!D){D=await live(t);if(!D){$("#msg").innerHTML=`找不到 <b>${esc(t)}</b> 的資料。請確認是美股代號（例：BRK-B），或稍後再試。`;return}}
  render(D)}
-async function live(t){// 不在資料庫的代號：透過公開 CORS 代理即時抓 Yahoo 日K（只有技術面）
- const u=`https://query1.finance.yahoo.com/v8/finance/chart/${t}?range=14mo&interval=1d`;
- for(const p of [x=>"https://api.allorigins.win/raw?url="+encodeURIComponent(x),x=>"https://api.codetabs.com/v1/proxy?quest="+encodeURIComponent(x),x=>"https://corsproxy.io/?url="+encodeURIComponent(x)]){
-  try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),12000);const j=await (await fetch(p(u),{signal:ctl.signal})).json();const r=j.chart.result[0],q=r.indicators.quote[0];
-   const candles=r.timestamp.map((s,i)=>({t:new Date((s+r.meta.gmtoffset)*1e3).toISOString().slice(0,10),o:q.open[i],h:q.high[i],l:q.low[i],c:q.close[i],v:q.volume[i]||0})).filter(x=>x.c!=null);
-   if(candles.length<70)continue;return{ticker:t,live:true,profile:{shortName:r.meta.longName||r.meta.shortName||t,currency:r.meta.currency,exchange:r.meta.exchangeName},candles,earnings:[],quarterly:[],estimates:{},sec:{},news:[],order_news:[],themes:[]}}catch(e){}}
- return null}
+const API="https://stock-lens-api.mrkingwayne.workers.dev/api/stock?t=";
+async function live(t){// 不在每日資料庫的代號：由 Cloudflare Worker 即時抓取完整資料
+ $("#msg").textContent="即時抓取 "+t+" 的股價、財報、訂單與新聞中（約 10 秒）…";
+ try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),45000);const r=await fetch(API+encodeURIComponent(t),{signal:ctl.signal});if(!r.ok)return null;const d=await r.json();return d.candles&&d.candles.length>=30?d:null}catch(e){return null}}
 function render(D){const P=D.profile||{},C=D.candles,l=C[C.length-1],pv=C[C.length-2],chg=l.c/pv.c-1,PJ=project(D);
  const E=(D.earnings||[]).filter(e=>e.act!=null),ne=(D.earnings||[]).filter(e=>e.act==null).slice(-1)[0],le=E[0];
  const Q=(D.quarterly||[]).filter(x=>x.rev!=null),q0=Q[0],q4=Q.find(x=>q0&&Math.abs((new Date(q0.end)-new Date(x.end))/864e5-365)<20);
@@ -144,7 +141,7 @@ function render(D){const P=D.profile||{},C=D.candles,l=C[C.length-1],pv=C[C.leng
  const sc=[["樂觀情境",Math.exp(Math.log(1+PJ.base)+PJ.vol3)-1,"up"],["基準情境",PJ.base,""],["悲觀情境",Math.exp(Math.log(1+PJ.base)-PJ.vol3)-1,"dn"]];
  const ob=orderYoY(D),s=D.sec||{};
  $("#app").innerHTML=`
- ${D.live?`<div class="disc">⚠️ ${esc(D.ticker)} 不在每日資料庫，這裡只有即時抓到的股價和技術面，沒有財報、訂單和新聞。<a style="color:#4da3ff" target="_blank" href="https://github.com/${REPO}/issues/new?title=build:${D.ticker}&body=請建立 ${D.ticker} 的完整資料">請求建立完整資料</a></div>`:""}
+ ${D.source==="worker"?`<div class="mut" style="font-size:12px;margin-bottom:8px">⚡ 即時資料（Cloudflare Worker，快取 30 分鐘）</div>`:""}
  <div class="card"><div class="top"><div><div class="name">${esc(D.ticker)}<small>${esc(P.longName||P.shortName||"")}</small></div>
  <div class="mut" style="font-size:13px;margin-top:4px">${esc(D.sector_zh||P.sector||"")}${D.industry_zh?" · "+esc(D.industry_zh):""}${P.exchange?" · "+esc(P.exchange):""}</div></div>
  <div style="text-align:right"><div class="px ${cls(chg)}">${fmt(l.c)}</div><div class="${cls(chg)}">${(l.c-pv.c>0?"+":"")+fmt(l.c-pv.c)}（${pct(chg,2)}）</div><div class="mut" style="font-size:12px">${l.t} 收盤 · ${esc(P.currency||"USD")}</div></div></div>
@@ -158,7 +155,7 @@ function render(D){const P=D.profile||{},C=D.candles,l=C[C.length-1],pv=C[C.leng
  <div style="overflow-x:auto"><table><tr><th>因子</th><th>目前數值</th><th>對 3 個月預期的影響</th><th style="text-align:left">規則</th></tr>${PJ.inp.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="${cls(parseFloat(r[2]))}">${r[2]}</td><td style="text-align:left" class="mut">${r[3]}</td></tr>`).join("")}</table></div></div>
  ${D.live?"":`<div class="two"><div class="card"><h2>最新財報<small>${le?"公布日 "+le.date:""}</small></h2>
  <div class="grid">${[["季度（截至）",q0?q0.end:"無資料"],["營收",q0?big(q0.rev):"無資料"],["營收年增",q0&&q4?pct(q0.rev/q4.rev-1):pct(revYoY(D))],["稀釋 EPS",q0?fmt(q0.eps):"無資料"],["EPS 預估 vs 實際",le?fmt(le.est)+" → "+fmt(le.act):"無資料"],["EPS 驚喜",le&&le.surp!=null?`<span class="${cls(le.surp)}">${le.surp>0?"+":""}${le.surp.toFixed(1)}%</span>`:"無資料"],["淨利",q0?big(q0.ni):"無資料"],["下次財報",ne?ne.date+`（預估 EPS ${fmt(ne.est)}）`:"無資料"]].map(([a,b])=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`).join("")}</div>
- <h2 style="margin-top:16px">近期 EPS 紀錄</h2><table><tr><th>公布日</th><th>預估</th><th>實際</th><th>驚喜</th></tr>${E.slice(0,6).map(e=>`<tr><td>${e.date}</td><td>${fmt(e.est)}</td><td>${fmt(e.act)}</td><td class="${cls(e.surp)}">${e.surp!=null?e.surp.toFixed(1)+"%":"無資料"}</td></tr>`).join("")||"<tr><td colspan=4>無資料</td></tr>"}</table></div>
+ <h2 style="margin-top:16px">近期 EPS 紀錄</h2><table><tr><th>季度／公布日</th><th>預估</th><th>實際</th><th>驚喜</th></tr>${E.slice(0,6).map(e=>`<tr><td>${e.date}</td><td>${fmt(e.est)}</td><td>${fmt(e.act)}</td><td class="${cls(e.surp)}">${e.surp!=null?e.surp.toFixed(1)+"%":"無資料"}</td></tr>`).join("")||"<tr><td colspan=4>無資料</td></tr>"}</table></div>
  <div class="card"><h2>季營收趨勢<small>SEC EDGAR 申報資料（美元）</small></h2>
  ${rq.length?`<div class="bars">${rq.map(x=>`<div class="bar"><span style="color:#c8d0df">${big(x.val)}</span><i style="height:${Math.max(4,x.val/mx*100)}%"></i>${x.end.slice(2,7)}</div>`).join("")}</div>`:"<p class='mut'>無資料（非美國申報公司或 ETF）</p>"}
  <h2 style="margin-top:16px">年度營收</h2><table><tr><th>年度截至</th><th>營收</th><th>年增</th></tr>${(s.rev_y||[]).slice(-5).map((x,i,a)=>`<tr><td>${x.end}</td><td>${big(x.val)}</td><td class="${i?cls(x.val/a[i-1].val-1):""}">${i?pct(x.val/a[i-1].val-1):""}</td></tr>`).join("")||"<tr><td colspan=3>無資料</td></tr>"}</table></div></div>
