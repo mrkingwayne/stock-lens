@@ -1,0 +1,6 @@
+__pycache__/
+site/data/
+*.png
+*.log
+tickers.json
+tcache.json

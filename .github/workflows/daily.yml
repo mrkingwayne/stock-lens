@@ -1,0 +1,29 @@
+name: daily-build
+on:
+  schedule: [{cron: "30 22 * * 1-5"}]
+  workflow_dispatch:
+permissions: {contents: write}
+concurrency: {group: pages-data, cancel-in-progress: false}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: gh-pages, path: pub}
+        continue-on-error: true
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install yfinance deep_translator
+      - name: build
+        run: |
+          mkdir -p pub/data; cp -f pub/tcache.json . 2>/dev/null || true
+          EXTRA=$(ls pub/data 2>/dev/null | grep -v index.json | sed 's/\.json$//' | tr '\n' ' ')
+          STOCKLENS_OUT=pub/data python build.py $(python -c "import build;print(' '.join(build.universe()))") $EXTRA || true
+          cp site/index.html pub/; cp tcache.json pub/ || true; touch pub/.nojekyll
+      - name: publish
+        run: |
+          cd pub && rm -rf .git && git init -q -b gh-pages && git add -A
+          git -c user.name=stocklens-bot -c user.email=bot@users.noreply.github.com commit -qm "data $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages

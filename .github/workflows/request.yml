@@ -1,0 +1,30 @@
+name: build-on-request
+on:
+  issues: {types: [opened]}
+permissions: {contents: write, issues: write}
+concurrency: {group: pages-data, cancel-in-progress: false}
+jobs:
+  one:
+    if: startsWith(github.event.issue.title, 'build:')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: gh-pages, path: pub}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install yfinance deep_translator
+      - id: b
+        env: {TITLE: "${{ github.event.issue.title }}"}
+        run: |
+          T=$(echo "$TITLE" | sed 's/^build://' | tr -d ' ' | tr a-z A-Z | tr . -)
+          echo "$T" | grep -Eq '^[A-Z0-9-]{1,8}$' || { echo "bad=1" >> $GITHUB_OUTPUT; exit 0; }
+          echo "t=$T" >> $GITHUB_OUTPUT; cp pub/tcache.json . 2>/dev/null || true
+          STOCKLENS_OUT=pub/data python build.py "$T"
+          test -f "pub/data/$T.json" && echo "ok=1" >> $GITHUB_OUTPUT || true
+          cp tcache.json pub/ || true
+          cd pub && git add -A && git -c user.name=stocklens-bot -c user.email=bot@users.noreply.github.com commit -qm "add $T" && git push || true
+      - env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          if [ "${{ steps.b.outputs.ok }}" = "1" ]; then M="已建立 ${{ steps.b.outputs.t }}，約 1 分鐘後可查看：https://${{ github.repository_owner }}.github.io/stock-lens/#${{ steps.b.outputs.t }}"; else M="建立失敗：找不到這個代號的資料。"; fi
+          gh issue close ${{ github.event.issue.number }} -R ${{ github.repository }} -c "$M"
