@@ -1,3 +1,4 @@
+import { biz } from "./biz.js";
 // Stock Lens API：只呼叫固定的上游（Yahoo / SEC / Google News / Google 翻譯），不是開放代理
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
 const SEC_UA = "StockLens research stocklens.app@outlook.com";
@@ -93,8 +94,10 @@ async function news(q, n) {
 }
 async function zh(lines) {
   const out = new Array(lines.length).fill(null), idx = lines.map((l, i) => [l, i]).filter(([l]) => l);
-  for (let i = 0; i < idx.length; i += 12) {
-    const ch = idx.slice(i, i + 12);
+  const chunks = []; let cur = [], len = 0;
+  for (const p of idx) { const l = encodeURIComponent(p[0].slice(0, 1500)).length; if (cur.length && (len + l > 6000 || cur.length >= 12)) { chunks.push(cur); cur = []; len = 0; } cur.push(p); len += l; }
+  if (cur.length) chunks.push(cur);
+  for (const ch of chunks) {
     try {
       const r = await fetch("https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl=zh-TW&" + ch.map(([l]) => "q=" + encodeURIComponent(l.slice(0, 1500))).join("&"), { headers: { "User-Agent": UA } });
       const j = await r.json();
@@ -105,7 +108,7 @@ async function zh(lines) {
 }
 async function build(t) {
   const ch = await chart(t); if (!ch || ch.candles.length < 30) return null;
-  const [S, SE] = await Promise.all([summary(t).catch(() => ({})), sec(t).catch(() => ({ rev_q: [], rev_y: [], rpo: [], backlog: [] }))]);
+  const [S, SE, B] = await Promise.all([summary(t).catch(() => ({})), sec(t).catch(() => ({ rev_q: [], rev_y: [], rpo: [], backlog: [] })), bizOf(t)]);
   const ap = S.assetProfile || {}, sd = S.summaryDetail || {}, fd = S.financialData || {}, ks = S.defaultKeyStatistics || {}, pr = S.price || {};
   const profile = { longName: pr.longName || ch.meta.longName, shortName: pr.shortName || ch.meta.shortName || t, sector: ap.sector, industry: ap.industry, country: ap.country, website: ap.website,
     fullTimeEmployees: ap.fullTimeEmployees, marketCap: raw(pr.marketCap) ?? raw(sd.marketCap), trailingPE: raw(sd.trailingPE), forwardPE: raw(sd.forwardPE) ?? raw(ks.forwardPE),
@@ -127,15 +130,19 @@ async function build(t) {
   const summ = (ap.longBusinessSummary || "").slice(0, 1400);
   const tr = await zh([...titles, summ, profile.sector || "", profile.industry || ""]);
   all.forEach((x, i) => x.zh = tr[i]); const n = titles.length;
-  return { ticker: t, source: "worker", updated: new Date().toISOString(), profile, summary: summ, summary_zh: tr[n], sector_zh: tr[n + 1], industry_zh: tr[n + 2], candles: ch.candles, earnings, quarterly, estimates: est, sec: SE, news: nw, order_news: ow, themes };
+  return { biz: B, ticker: t, source: "worker", updated: new Date().toISOString(), profile, summary: summ, summary_zh: tr[n], sector_zh: tr[n + 1], industry_zh: tr[n + 2], candles: ch.candles, earnings, quarterly, estimates: est, sec: SE, news: nw, order_news: ow, themes };
+}
+async function bizOf(t) {
+  try { return await cached("biz/v5/" + t, 86400, async () => biz(t, await cikOf(t), null, UA, zh, cached)); } catch (e) { return { error: String(e) }; }
 }
 export default {
   async fetch(req, env, ctx) {
     const o = req.headers.get("Origin"), cors = { "Access-Control-Allow-Origin": ORIGINS.includes(o) ? o : ORIGINS[0], "Access-Control-Allow-Methods": "GET", "Vary": "Origin" };
     if (req.method === "OPTIONS") return new Response(null, { headers: cors });
     const url = new URL(req.url), t = (url.searchParams.get("t") || "").toUpperCase().replace(".", "-");
+    if (url.pathname === "/api/biz" && /^[A-Z0-9-]{1,10}$/.test(t)) return new Response(JSON.stringify(await bizOf(t)), { headers: { ...cors, "Content-Type": "application/json; charset=utf-8" } });
     if (url.pathname !== "/api/stock" || !/^[A-Z0-9^-]{1,10}$/.test(t)) return new Response(JSON.stringify({ error: "用法：/api/stock?t=NVDA" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    const cache = caches.default, key = new Request("https://cache.stocklens/stock/v2/" + t);
+    const cache = caches.default, key = new Request("https://cache.stocklens/stock/v4/" + t);
     let r = await cache.match(key);
     if (!r) {
       let d = null; try { d = await build(t); } catch (e) { return new Response(JSON.stringify({ error: String(e) }), { status: 502, headers: { ...cors, "Content-Type": "application/json" } }); }

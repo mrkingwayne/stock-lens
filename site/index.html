@@ -32,6 +32,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 6px;b
 .sc{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sc .kv b{font-size:20px}
 #msg{text-align:center;color:var(--mut);padding:60px 10px}.hide{display:none}p.sum{font-size:14px;line-height:1.75;color:#c8d0df}
 footer{color:var(--mut);font-size:12px;text-align:center;padding:20px}
+.bz{margin:10px 0}.bz h3{font-size:15px;margin:0 0 4px;color:#f5b942}.bz p{margin:4px 0;line-height:1.65;font-size:14px}.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.sb{display:grid;grid-template-columns:1fr 80px auto;gap:8px;align-items:center;font-size:13px;margin:4px 0}.sbt{background:#2a2f3a;height:8px;border-radius:4px}.sbt i{display:block;height:8px;background:#4da3ff;border-radius:4px}.chip{display:inline-block;padding:3px 10px;border:1px solid #4da3ff;border-radius:12px;color:#4da3ff;text-decoration:none;margin:2px}
 </style></head><body>
 <header><div class="logo">Stock <span>Lens</span> 美股透視鏡</div>
 <form id="f" autocomplete="off"><input id="q" placeholder="輸入美股代號，如 NVDA" ><button>查詢</button><div id="sug"></div></form>
@@ -129,11 +130,23 @@ function draw(D,PJ){charts.forEach(c=>c.remove());charts=[];
 async function load(t){if(!t)return;t=t.toUpperCase();$("#msg").textContent="載入 "+t+" 中…";$("#msg").classList.remove("hide");$("#app").classList.add("hide");
  let D=null;try{const r=await fetch("data/"+t+".json?v="+Date.now().toString().slice(0,-5));if(r.ok)D=await r.json()}catch(e){}
  if(!D){D=await live(t);if(!D){$("#msg").innerHTML=`找不到 <b>${esc(t)}</b> 的資料。請確認是美股代號（例：BRK-B），或稍後再試。`;return}}
+ if(!D.biz){try{const r=await fetch(API.replace("/api/stock","/api/biz")+encodeURIComponent(t));if(r.ok)D.biz=await r.json()}catch(e){}}
  render(D)}
 const API="https://stock-lens-api.mrkingwayne.workers.dev/api/stock?t=";
 async function live(t){// 不在每日資料庫的代號：由 Cloudflare Worker 即時抓取完整資料
  $("#msg").textContent="即時抓取 "+t+" 的股價、財報、訂單與新聞中（約 10 秒）…";
  try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),45000);const r=await fetch(API+encodeURIComponent(t),{signal:ctl.signal});if(!r.ok)return null;const d=await r.json();return d.candles&&d.candles.length>=30?d:null}catch(e){return null}}
+function bizCard(D){const B=D.biz||{},P=D.profile||{},T=B.tenk,sg=B.segments||{};
+ const para=(arr,lbl)=>`<div class="bz"><h3>${lbl}</h3>${(arr&&arr.length)?arr.map(x=>`<p>${esc(x.zh||x.en)}</p>`).join(""):`<p class="mut">無資料（10-K 未找到對應段落）</p>`}</div>`;
+ const bars=(o,lbl)=>{if(!o||!o.items||!o.items.length)return `<div class="bz"><h3>${lbl}</h3><p class="mut">無資料</p></div>`;const tot=o.total||o.items.reduce((a,x)=>a+x.val,0),sum=o.items.reduce((a,x)=>a+x.val,0);
+  return `<div class="bz"><h3>${lbl}<small class="mut">（會計年度截至 ${esc(o.end)}，合計 ${big(tot)}）</small></h3>${o.items.map(x=>`<div class="sb"><span>${esc(x.zh||x.name)}<small class="mut"> ${esc(x.name)}</small></span><div class="sbt"><i style="width:${Math.min(100,x.val/tot*100).toFixed(1)}%"></i></div><b>${big(x.val)} · ${(x.val/tot*100).toFixed(1)}%</b></div>`).join("")}${sum>tot*1.05?`<div class="mut" style="font-size:12px">註：公司申報的項目有層級重疊（例如大類與其子項），百分比為各項占總營收比，加總會超過 100%。</div>`:""}</div>`};
+ return `<div class="card" id="biz"><h2>這間公司在做什麼<small>資料來源：Yahoo Finance 公司簡介、SEC 年報（10-K）Item 1 與 XBRL 營收拆分；中文為機器翻譯</small></h2>
+ <div class="bz"><h3>公司簡介（Yahoo）</h3><p>${esc(D.summary_zh||D.summary||"無資料")}</p></div>
+ ${para(B.overview,"主要產品／服務（10-K Item 1 摘錄）")}${para(B.markets,"業務分部與市場")}${para(B.customers,"主要客戶與銷售方式")}
+ <div class="g2">${bars(sg.seg,"營運分部營收")}${bars(sg.prod,"產品／服務別營收")}${bars(sg.geo,"地區別營收")}</div>
+ ${para(B.competition,"競爭態勢（10-K 原文摘錄）")}
+ <div class="bz"><h3>同業／相關公司<small class="mut">（Yahoo「相關股票」推薦，非嚴格同業分類）</small></h3>${(B.peers&&B.peers.length)?B.peers.map(p=>`<a class="chip" href="#${esc(p)}">${esc(p)}</a>`).join(" "):"<span class='mut'>無資料</span>"}</div>
+ <div class="mut" style="font-size:12px;margin-top:8px">來源：${T?`<a style="color:#4da3ff" target="_blank" rel="noopener" href="${esc(T.url)}">SEC ${esc(T.form)}（申報日 ${esc(T.date)}，期間至 ${esc(T.period)}）</a>`:"SEC 年報：無資料"} · Yahoo Finance quoteSummary。摘錄為原文翻譯，未加入其他推論。</div></div>`}
 function render(D){const P=D.profile||{},C=D.candles,l=C[C.length-1],pv=C[C.length-2],chg=l.c/pv.c-1,PJ=project(D);
  const E=(D.earnings||[]).filter(e=>e.act!=null),ne=(D.earnings||[]).filter(e=>e.act==null).slice(-1)[0],le=E[0];
  const Q=(D.quarterly||[]).filter(x=>x.rev!=null),q0=Q[0],q4=Q.find(x=>q0&&Math.abs((new Date(q0.end)-new Date(x.end))/864e5-365)<20);
@@ -146,6 +159,7 @@ function render(D){const P=D.profile||{},C=D.candles,l=C[C.length-1],pv=C[C.leng
  <div class="mut" style="font-size:13px;margin-top:4px">${esc(D.sector_zh||P.sector||"")}${D.industry_zh?" · "+esc(D.industry_zh):""}${P.exchange?" · "+esc(P.exchange):""}</div></div>
  <div style="text-align:right"><div class="px ${cls(chg)}">${fmt(l.c)}</div><div class="${cls(chg)}">${(l.c-pv.c>0?"+":"")+fmt(l.c-pv.c)}（${pct(chg,2)}）</div><div class="mut" style="font-size:12px">${l.t} 收盤 · ${esc(P.currency||"USD")}</div></div></div>
  <div class="grid" style="margin-top:14px">${[["市值",big(P.marketCap)],["本益比（近四季）",fmt(P.trailingPE,1)],["預估本益比",fmt(P.forwardPE,1)],["股價營收比",fmt(P.priceToSalesTrailing12Months,1)],["毛利率",pct(P.grossMargins)],["營業利益率",pct(P.operatingMargins)],["52 週區間",P.fiftyTwoWeekLow?fmt(P.fiftyTwoWeekLow)+" – "+fmt(P.fiftyTwoWeekHigh):"無資料"],["分析師目標價",P.targetMeanPrice?fmt(P.targetMeanPrice)+`（${P.numberOfAnalystOpinions||"?"} 位）`:"無資料"]].map(([a,b])=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`).join("")}</div></div>
+${bizCard(D)}
  <div class="card"><h2>日K線 與 未來 3 個月預測情境<small>近一年日K · MA20/MA60 · 成交量 · RSI · MACD</small></h2>
  <div class="legend"><span><i style="background:#f5b942"></i>MA20</span><span><i style="background:#b37cff"></i>MA60</span><span><i style="background:#ef4451"></i>樂觀（+1σ）</span><span><i style="background:#4da3ff"></i>基準</span><span><i style="background:#1fbf75"></i>悲觀（-1σ）</span><span>淡線 ±2σ</span><span>半透明 K 棒＝模擬日K（預測情境）</span></div>
  <div id="chart"></div><div class="mut" style="font-size:11px">RSI(14)</div><div id="rsi"></div><div class="mut" style="font-size:11px">MACD(12,26,9)</div><div id="macd"></div>

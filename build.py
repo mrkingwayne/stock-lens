@@ -109,6 +109,13 @@ THEMES = [("AI 人工智慧", r"\bAI\b|artificial intelligence|generative|LLM|ch
     ("加密貨幣", r"bitcoin|crypto|blockchain"), ("關稅/貿易", r"tariff|trade war|export (ban|control)|China"), ("財報", r"earnings|quarter|revenue|guidance|EPS"),
     ("訂單/合約", r"contract|order|backlog|deal|award"), ("併購", r"acqui|merger|buyout|takeover"), ("裁員/重組", r"layoff|job cuts|restructur"), ("股票回購/股利", r"buyback|repurchase|dividend"),
     ("分析師評等", r"upgrade|downgrade|price target|analyst|rating")]
+def biz_of(t):
+    import urllib.request
+    try:
+        return json.loads(urllib.request.urlopen(urllib.request.Request("https://stock-lens-api.mrkingwayne.workers.dev/api/biz?t=" + t, headers={"User-Agent": "StockLens build", "Origin": "https://mrkingwayne.github.io"}), timeout=60).read())
+    except Exception as e:
+        return None
+
 def build(t):
     t = t.upper().strip(); tk = yf.Ticker(t)
     h = tk.history(period="14mo", interval="1d", auto_adjust=False)
@@ -169,7 +176,7 @@ if __name__ == "__main__":
     ts = sys.argv[1:] or universe(); ok = []
     for i, t in enumerate(ts):
         try:
-            d = build(t); json.dump(d, open(os.path.join(OUT, t + ".json"), "w"), ensure_ascii=False, separators=(",", ":")); ok.append(t); print(i, t, "ok", len(d["candles"]))
+            d = build(t); d["biz"] = biz_of(t); json.dump(d, open(os.path.join(OUT, t + ".json"), "w"), ensure_ascii=False, separators=(",", ":")); ok.append(t); print(i, t, "ok", len(d["candles"]))
         except Exception as e: print(i, t, "FAIL", e)
         if i % 20 == 0: json.dump(TC, open(CF, "w"), ensure_ascii=False)
         time.sleep(0.3)
