@@ -179,7 +179,7 @@ if __name__ == "__main__":
             d = build(t); d["biz"] = biz_of(t); json.dump(d, open(os.path.join(OUT, t + ".json"), "w"), ensure_ascii=False, separators=(",", ":")); ok.append(t); print(i, t, "ok", len(d["candles"]))
         except Exception as e: print(i, t, "FAIL", e)
         if i % 20 == 0: json.dump(TC, open(CF, "w"), ensure_ascii=False)
-        time.sleep(0.3)
+        time.sleep(1.2)
     json.dump(TC, open(CF, "w"), ensure_ascii=False)
     idx_f = os.path.join(OUT, "index.json"); idx = json.load(open(idx_f)) if os.path.exists(idx_f) else {}
     for t in ok:
